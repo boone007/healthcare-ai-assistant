@@ -1,0 +1,96 @@
+// Application Insights / Log Analytics KQL queries for the Healthcare AI
+// Assistant scoring API (func-hcai-{env}) and AML online endpoint.
+//
+// Referenced by docs/runbook-operations.md for incident investigation and
+// by src/monitoring/alert_rules.json for scheduled alert queries.
+
+// -----------------------------------------------------------------------
+// 1. Scoring latency (p50 / p95 / p99) over the last hour, by 5-minute bin
+// -----------------------------------------------------------------------
+requests
+| where timestamp > ago(1h)
+| where name has "v1/score"
+| summarize
+    p50 = percentile(duration, 50),
+    p95 = percentile(duration, 95),
+    p99 = percentile(duration, 99),
+    requestCount = count()
+    by bin(timestamp, 5m)
+| order by timestamp asc
+
+
+// -----------------------------------------------------------------------
+// 2. Error rate (5xx) over the last 30 minutes, by 5-minute bin
+//    Used by the HighErrorRate alert (alert_rules.json)
+// -----------------------------------------------------------------------
+requests
+| where timestamp > ago(30m)
+| where name has "v1/score"
+| summarize
+    total = count(),
+    errors = countif(resultCode startswith "5")
+    by bin(timestamp, 5m)
+| extend errorRate = round(100.0 * errors / total, 2)
+| order by timestamp asc
+
+
+// -----------------------------------------------------------------------
+// 3. Recent failures with status code breakdown (for incident triage)
+// -----------------------------------------------------------------------
+requests
+| where timestamp > ago(30m)
+| where success == false
+| summarize count() by resultCode, bin(timestamp, 5m)
+| order by timestamp desc
+
+
+// -----------------------------------------------------------------------
+// 4. Dependency calls from the Function App to the AML endpoint
+//    Helps distinguish Function-layer vs. AML-layer failures (runbook §5.1)
+// -----------------------------------------------------------------------
+dependencies
+| where timestamp > ago(30m)
+| where target has "inference.ml.azure.com"
+| summarize
+    total = count(),
+    failures = countif(success == false),
+    avgDuration = avg(duration)
+    by bin(timestamp, 5m)
+| order by timestamp asc
+
+
+// -----------------------------------------------------------------------
+// 5. Risk tier distribution of scored encounters (last 24h)
+//    Useful for spotting sudden shifts in the prediction distribution
+// -----------------------------------------------------------------------
+customEvents
+| where timestamp > ago(24h)
+| where name == "ScoringCompleted"
+| extend riskTier = tostring(customDimensions["risk_tier"])
+| summarize count() by riskTier, bin(timestamp, 1h)
+| order by timestamp asc
+
+
+// -----------------------------------------------------------------------
+// 6. Rate-limited requests (429s) by client application ID
+// -----------------------------------------------------------------------
+requests
+| where timestamp > ago(1h)
+| where resultCode == "429"
+| extend appId = tostring(customDimensions["appid"])
+| summarize count() by appId, bin(timestamp, 5m)
+| order by timestamp desc
+
+
+// -----------------------------------------------------------------------
+// 7. AML endpoint availability over the last 24 hours
+// -----------------------------------------------------------------------
+dependencies
+| where timestamp > ago(24h)
+| where target has "inference.ml.azure.com"
+| summarize
+    total = count(),
+    successCount = countif(success == true)
+    by bin(timestamp, 15m)
+| extend availabilityPct = round(100.0 * successCount / total, 3)
+| order by timestamp asc

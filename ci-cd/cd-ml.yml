@@ -1,0 +1,180 @@
+# Continuous Delivery — ML Pipeline
+#
+# Submits the Azure ML training pipeline (validate -> transform -> train ->
+# evaluate -> responsible AI -> register), waits for it to complete, and -
+# if the responsible AI promotion gate passes and the model was registered -
+# rolls the new model out to the managed online endpoint.
+#
+# Triggers:
+#   - workflow_dispatch: manual run, choose target environment (dev/prod)
+#   - push to main touching ML pipeline code or training config: runs
+#     against dev automatically. Production rollout is manual-only via
+#     workflow_dispatch with environment=prod (gated by the GitHub
+#     "production" environment's required reviewers).
+#
+# This file lives at ci-cd/cd-ml.yml. To activate it as a GitHub Actions
+# workflow, copy or symlink it to .github/workflows/cd-ml.yml.
+#
+# Required repository/organization secrets (federated OIDC credentials):
+#   AZURE_CLIENT_ID
+#   AZURE_TENANT_ID
+#   AZURE_SUBSCRIPTION_ID
+#
+# Required repository variables (per-environment AML workspace names, set
+# via repo "Variables" or environment-scoped variables):
+#   AML_RESOURCE_GROUP_DEV / AML_RESOURCE_GROUP_PROD
+#   AML_WORKSPACE_DEV / AML_WORKSPACE_PROD
+
+name: CD - ML Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - prod
+  push:
+    branches: [main]
+    paths:
+      - "src/ml_pipeline/**"
+      - "src/common/**"
+      - "configs/train_config.yaml"
+      - "ci-cd/cd-ml.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  resolve-environment:
+    name: Resolve target environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  train-and-register:
+    name: Run training pipeline and register model
+    runs-on: ubuntu-latest
+    needs: resolve-environment
+    environment: ${{ needs.resolve-environment.outputs.environment }}
+    outputs:
+      job-name: ${{ steps.submit.outputs.job_name }}
+    env:
+      RESOURCE_GROUP: ${{ needs.resolve-environment.outputs.environment == 'prod' && vars.AML_RESOURCE_GROUP_PROD || vars.AML_RESOURCE_GROUP_DEV }}
+      WORKSPACE: ${{ needs.resolve-environment.outputs.environment == 'prod' && vars.AML_WORKSPACE_PROD || vars.AML_WORKSPACE_DEV }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install az ml extension
+        run: az extension add -n ml -y
+
+      - name: Submit AML pipeline job
+        id: submit
+        run: |
+          JOB_NAME=$(az ml job create \
+            --file src/ml_pipeline/pipeline_definition.yml \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            --set "tags.git_sha=${{ github.sha }}" \
+            --query name -o tsv)
+          echo "Submitted pipeline job: $JOB_NAME"
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Stream pipeline job logs
+        run: |
+          az ml job stream \
+            --name "${{ steps.submit.outputs.job_name }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE"
+
+      - name: Check pipeline job status
+        run: |
+          STATUS=$(az ml job show \
+            --name "${{ steps.submit.outputs.job_name }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            --query status -o tsv)
+          echo "Pipeline job status: $STATUS"
+          if [ "$STATUS" != "Completed" ]; then
+            echo "Pipeline job did not complete successfully (status=$STATUS)."
+            echo "If the failure occurred in the register_model step, this likely"
+            echo "means the responsible AI promotion gate rejected the candidate"
+            echo "model. See docs/responsible-ai-report.md and the job's"
+            echo "register_model logs for details."
+            exit 1
+          fi
+
+  deploy-endpoint:
+    name: Roll out to managed online endpoint
+    runs-on: ubuntu-latest
+    needs: [resolve-environment, train-and-register]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
+    env:
+      RESOURCE_GROUP: ${{ needs.resolve-environment.outputs.environment == 'prod' && vars.AML_RESOURCE_GROUP_PROD || vars.AML_RESOURCE_GROUP_DEV }}
+      WORKSPACE: ${{ needs.resolve-environment.outputs.environment == 'prod' && vars.AML_WORKSPACE_PROD || vars.AML_WORKSPACE_DEV }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install az ml extension
+        run: az extension add -n ml -y
+
+      - name: Ensure endpoint exists
+        run: |
+          az ml online-endpoint create \
+            --file src/deployment/aml_endpoint/endpoint.yml \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            || echo "Endpoint already exists, continuing."
+
+      - name: Deploy new model version (blue deployment)
+        run: |
+          az ml online-deployment create \
+            --file src/deployment/aml_endpoint/deployment.yml \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            --all-traffic
+
+      - name: Smoke test the endpoint
+        run: |
+          az ml online-endpoint invoke \
+            --name ep-hcai-readmission-${{ needs.resolve-environment.outputs.environment }} \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            --request-file src/deployment/aml_endpoint/sample_request.json
+
+      - name: Get deployment logs (on failure)
+        if: failure()
+        run: |
+          az ml online-deployment get-logs \
+            --name blue \
+            --endpoint-name ep-hcai-readmission-${{ needs.resolve-environment.outputs.environment }} \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name "$WORKSPACE" \
+            --lines 200

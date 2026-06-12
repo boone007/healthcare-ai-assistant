@@ -1,0 +1,23 @@
+# Azure ML Managed Online Endpoint definition
+#
+# Create with:
+#   az ml online-endpoint create -f src/deployment/aml_endpoint/endpoint.yml \
+#     --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev
+#
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+name: ep-hcai-readmission-dev
+description: >-
+  Managed online endpoint serving the readmission-risk-model for the
+  AI-Powered Personalized Healthcare Assistant. Consumed exclusively by the
+  func-hcai-{env} Azure Function API (see src/deployment/api/function_app/).
+auth_mode: key
+
+# System-assigned managed identity is used by the Function App to fetch the
+# endpoint key from Key Vault at runtime (see docs/runbook-operations.md §3.3).
+identity:
+  type: system_assigned
+
+tags:
+  project: healthcare-ai-assistant
+  component: aml-endpoint
+  environment: dev

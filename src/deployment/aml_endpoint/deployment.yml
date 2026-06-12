@@ -1,0 +1,56 @@
+# Azure ML Managed Online Deployment definition
+#
+# Create with:
+#   az ml online-deployment create -f src/deployment/aml_endpoint/deployment.yml \
+#     --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev --all-traffic
+#
+# Blue/green deployments: create a second deployment (e.g. name: green) under
+# the same endpoint and shift traffic gradually per docs/runbook-operations.md §3.1.
+#
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+name: blue
+endpoint_name: ep-hcai-readmission-dev
+
+# Reference to a registered model version (output of register_model.py).
+model: azureml:readmission-risk-model@latest
+
+code_configuration:
+  code: ../scoring
+  scoring_script: score.py
+
+environment: azureml:hcai-scoring-env@latest
+
+instance_type: Standard_DS3_v2
+instance_count: 1
+
+# Liveness/readiness probes hit score.py's init() success and a lightweight
+# health check; AML uses these to gate traffic during rollout.
+liveness_probe:
+  initial_delay: 30
+  period: 10
+  timeout: 5
+  success_threshold: 1
+  failure_threshold: 3
+
+readiness_probe:
+  initial_delay: 30
+  period: 10
+  timeout: 5
+  success_threshold: 1
+  failure_threshold: 3
+
+request_settings:
+  request_timeout_ms: 5000
+  max_concurrent_requests_per_instance: 4
+  max_queue_wait_ms: 2000
+
+# Autoscaling is configured separately via:
+#   az ml online-deployment update --name blue --endpoint-name ep-hcai-readmission-dev \
+#     --set scale_settings.type=target_utilization
+scale_settings:
+  type: default
+
+tags:
+  project: healthcare-ai-assistant
+  component: aml-deployment
+  environment: dev

@@ -1,0 +1,180 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "description": "Azure Monitor scheduled-query and metric alert rule definitions for the Healthcare AI Assistant. Deploy via `az deployment group create` referencing this template, or adapt as Terraform `azurerm_monitor_scheduled_query_rules_alert_v2` / `azurerm_monitor_metric_alert` resources.",
+  "parameters": {
+    "environment": { "type": "string", "defaultValue": "dev" },
+    "appInsightsResourceId": {
+      "type": "string",
+      "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hcai-dev/providers/Microsoft.Insights/components/appi-hcai-dev"
+    },
+    "amlEndpointResourceId": {
+      "type": "string",
+      "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hcai-dev/providers/Microsoft.MachineLearningServices/workspaces/mlw-hcai-dev/onlineEndpoints/ep-hcai-readmission-dev"
+    },
+    "actionGroupResourceId": {
+      "type": "string",
+      "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hcai-dev/providers/Microsoft.Insights/actionGroups/ag-hcai-mlops"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "alert-hcai-[parameters('environment')]-high-scoring-latency-p95",
+      "location": "eastus2",
+      "properties": {
+        "displayName": "HighScoringLatencyP95",
+        "description": "p95 scoring latency exceeded 1000ms over a 5-minute window.",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": ["[parameters('appInsightsResourceId')]"],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "requests | where name has 'v1/score' | summarize p95 = percentile(duration, 95)",
+              "timeAggregation": "Maximum",
+              "operator": "GreaterThan",
+              "threshold": 1000,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "alert-hcai-[parameters('environment')]-high-error-rate",
+      "location": "eastus2",
+      "properties": {
+        "displayName": "HighErrorRate",
+        "description": "5xx error rate on /v1/score exceeded 5% over a 5-minute window.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": ["[parameters('appInsightsResourceId')]"],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "requests | where name has 'v1/score' | summarize errorRate = 100.0 * countif(resultCode startswith '5') / count()",
+              "timeAggregation": "Maximum",
+              "operator": "GreaterThan",
+              "threshold": 5,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "alert-hcai-[parameters('environment')]-endpoint-availability-drop",
+      "location": "global",
+      "properties": {
+        "description": "AML managed online endpoint availability dropped below 99% over 15 minutes.",
+        "severity": 1,
+        "enabled": true,
+        "scopes": ["[parameters('amlEndpointResourceId')]"],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "AvailabilityCriterion",
+              "metricName": "RequestsPerMinute",
+              "metricNamespace": "Microsoft.MachineLearningServices/workspaces/onlineEndpoints",
+              "operator": "LessThan",
+              "threshold": 99,
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": [
+          { "actionGroupId": "[parameters('actionGroupResourceId')]" }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "alert-hcai-[parameters('environment')]-data-drift-detected",
+      "location": "eastus2",
+      "properties": {
+        "displayName": "DataDriftDetected",
+        "description": "src/monitoring/data_drift_detection.py reported PSI > threshold for one or more features. Emitted as a custom event 'DataDriftReport' with customDimensions.drift_detected=true.",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": ["[parameters('appInsightsResourceId')]"],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == 'DataDriftReport' | where tobool(customDimensions['drift_detected']) == true | summarize count()",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "alert-hcai-[parameters('environment')]-model-drift-detected",
+      "location": "eastus2",
+      "properties": {
+        "displayName": "ModelDriftDetected",
+        "description": "src/monitoring/model_drift_detection.py reported prediction-distribution KS p-value below threshold or rolling AUC below the promotion-gate minimum. Emitted as a custom event 'ModelDriftReport' with customDimensions.drift_detected=true.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": ["[parameters('appInsightsResourceId')]"],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == 'ModelDriftReport' | where tobool(customDimensions['drift_detected']) == true | summarize count()",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    }
+  ]
+}

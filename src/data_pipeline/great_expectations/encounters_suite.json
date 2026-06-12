@@ -1,0 +1,121 @@
+{
+  "expectation_suite_name": "encounters_suite",
+  "meta": {
+    "great_expectations_version": "0.18.16",
+    "notes": "Validation suite for raw inpatient encounter records (src/common/schemas.py:RawEncounter). Applied by src/data_pipeline/validate.py before feature engineering."
+  },
+  "expectations": [
+    {
+      "expectation_type": "expect_table_columns_to_match_set",
+      "kwargs": {
+        "column_set": [
+          "encounter_id",
+          "patient_id",
+          "admit_date",
+          "discharge_date",
+          "age",
+          "sex",
+          "ethnicity",
+          "insurance_type",
+          "admission_type",
+          "discharge_disposition",
+          "length_of_stay",
+          "primary_diagnosis_code",
+          "comorbidity_count",
+          "charlson_index",
+          "prior_admissions_12mo",
+          "prior_ed_visits_12mo",
+          "num_medications",
+          "bmi",
+          "systolic_bp",
+          "glucose_level",
+          "creatinine",
+          "readmitted_30d"
+        ],
+        "exact_match": false
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "encounter_id" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": { "column": "encounter_id" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "patient_id" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "age", "min_value": 0, "max_value": 120 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": { "column": "sex", "value_set": ["M", "F", "U"] }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "admission_type",
+        "value_set": ["Elective", "Emergency", "Urgent"]
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "discharge_disposition",
+        "value_set": ["Home", "SNF", "Rehab", "HomeHealth", "AMA"]
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "length_of_stay", "min_value": 0, "max_value": 365 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "comorbidity_count", "min_value": 0, "max_value": 30 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "charlson_index", "min_value": 0, "max_value": 20 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "prior_admissions_12mo", "min_value": 0, "max_value": 50 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "prior_ed_visits_12mo", "min_value": 0, "max_value": 50 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "num_medications", "min_value": 0, "max_value": 60 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "bmi", "min_value": 5, "max_value": 100 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "systolic_bp", "min_value": 40, "max_value": 300 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "glucose_level", "min_value": 20, "max_value": 1000 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "creatinine", "min_value": 0.1, "max_value": 20 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": { "column": "readmitted_30d", "value_set": [0, 1], "mostly": 0.99 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "discharge_date", "mostly": 0.999 }
+    }
+  ]
+}

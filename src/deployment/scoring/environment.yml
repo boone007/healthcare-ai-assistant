@@ -1,0 +1,32 @@
+# Azure ML environment definition for the scoring deployment.
+#
+# Create/register with:
+#   az ml environment create -f src/deployment/scoring/environment.yml \
+#     --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev
+#
+$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+name: hcai-scoring-env
+description: Runtime environment for the readmission-risk-model scoring script (score.py).
+image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+
+conda_file: |
+  name: hcai-scoring-env
+  channels:
+    - conda-forge
+  dependencies:
+    - python=3.10
+    - pip
+    - pip:
+        - pandas==2.2.2
+        - numpy==1.26.4
+        - scikit-learn==1.5.0
+        - lightgbm==4.3.0
+        - xgboost==2.0.3
+        - shap==0.45.1
+        - joblib==1.4.2
+        - pydantic==2.7.1
+        - azureml-inference-server-http==1.3.1
+
+tags:
+  project: healthcare-ai-assistant
+  component: scoring-environment

@@ -1,0 +1,168 @@
+# Azure ML pipeline definition (CLI v2 / YAML)
+#
+# Declarative equivalent of pipeline_definition.py. Submit with:
+#
+#   az ml job create -f src/ml_pipeline/pipeline_definition.yml \
+#     --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev \
+#     --set inputs.raw_data.path=azureml:encounters_raw:1
+#
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+type: pipeline
+display_name: hcai-readmission-training-pipeline
+description: Validate -> transform -> train -> evaluate -> responsible AI -> register
+experiment_name: hcai-readmission-risk
+
+settings:
+  default_compute: azureml:cpu-cluster-dev
+  continue_on_step_failure: false
+
+inputs:
+  raw_data:
+    type: uri_file
+    path: azureml:encounters_raw:1
+  config_path:
+    type: string
+    default: configs/train_config.yaml
+
+outputs:
+  model_dir:
+    type: uri_folder
+  metrics_dir:
+    type: uri_folder
+  fairness_dir:
+    type: uri_folder
+
+jobs:
+  validate_data:
+    type: command
+    display_name: Validate raw encounters (Great Expectations)
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      raw_data: ${{parent.inputs.raw_data}}
+    outputs:
+      validation_report:
+        type: uri_folder
+    command: >-
+      python -m src.data_pipeline.validate
+      --input ${{inputs.raw_data}}
+      --report-out ${{outputs.validation_report}}/report.json
+
+  transform_features:
+    type: command
+    display_name: Feature engineering
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      raw_data: ${{parent.inputs.raw_data}}
+    outputs:
+      features:
+        type: uri_folder
+    command: >-
+      python -m src.data_pipeline.transform
+      --input ${{inputs.raw_data}}
+      --output ${{outputs.features}}/features.parquet
+
+  train_model:
+    type: command
+    display_name: Train readmission-risk model
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      features: ${{parent.jobs.transform_features.outputs.features}}
+      config_path: ${{parent.inputs.config_path}}
+    outputs:
+      model_dir: ${{parent.outputs.model_dir}}
+    command: >-
+      python -m src.ml_pipeline.train
+      --data ${{inputs.features}}/features.parquet
+      --config ${{inputs.config_path}}
+      --output-dir ${{outputs.model_dir}}
+
+  evaluate_model:
+    type: command
+    display_name: Evaluate model (AUC, PR, calibration)
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      model_dir: ${{parent.jobs.train_model.outputs.model_dir}}
+      config_path: ${{parent.inputs.config_path}}
+    outputs:
+      metrics_dir: ${{parent.outputs.metrics_dir}}
+    command: >-
+      python -m src.ml_pipeline.evaluate
+      --model-path ${{inputs.model_dir}}/model.pkl
+      --data ${{inputs.model_dir}}/test.parquet
+      --config ${{inputs.config_path}}
+      --output ${{outputs.metrics_dir}}/metrics.json
+
+  shap_explainability:
+    type: command
+    display_name: "Responsible AI: SHAP explainability"
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      model_dir: ${{parent.jobs.train_model.outputs.model_dir}}
+      config_path: ${{parent.inputs.config_path}}
+    outputs:
+      rai_dir:
+        type: uri_folder
+    command: >-
+      python -m src.ml_pipeline.responsible_ai.shap_explainability
+      --model-path ${{inputs.model_dir}}/model.pkl
+      --data ${{inputs.model_dir}}/test.parquet
+      --config ${{inputs.config_path}}
+      --output ${{outputs.rai_dir}}/shap_report.json
+
+  fairness_metrics:
+    type: command
+    display_name: "Responsible AI: fairness metrics"
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      model_dir: ${{parent.jobs.train_model.outputs.model_dir}}
+      config_path: ${{parent.inputs.config_path}}
+    outputs:
+      rai_dir: ${{parent.outputs.fairness_dir}}
+    command: >-
+      python -m src.ml_pipeline.responsible_ai.fairness_metrics
+      --model-path ${{inputs.model_dir}}/model.pkl
+      --data ${{inputs.model_dir}}/test.parquet
+      --config ${{inputs.config_path}}
+      --output ${{outputs.rai_dir}}/fairness_report.json
+
+  error_analysis:
+    type: command
+    display_name: "Responsible AI: error/slice analysis"
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      model_dir: ${{parent.jobs.train_model.outputs.model_dir}}
+      config_path: ${{parent.inputs.config_path}}
+    outputs:
+      rai_dir:
+        type: uri_folder
+    command: >-
+      python -m src.ml_pipeline.responsible_ai.error_analysis
+      --model-path ${{inputs.model_dir}}/model.pkl
+      --data ${{inputs.model_dir}}/test.parquet
+      --config ${{inputs.config_path}}
+      --output ${{outputs.rai_dir}}/error_analysis.json
+
+  register_model:
+    type: command
+    display_name: Register model (promotion gate)
+    code: ../../..
+    environment: azureml:hcai-training-env@latest
+    inputs:
+      model_dir: ${{parent.jobs.train_model.outputs.model_dir}}
+      metrics_dir: ${{parent.jobs.evaluate_model.outputs.metrics_dir}}
+      rai_dir: ${{parent.jobs.fairness_metrics.outputs.rai_dir}}
+      config_path: ${{parent.inputs.config_path}}
+    command: >-
+      python -m src.ml_pipeline.register_model
+      --model-path ${{inputs.model_dir}}/model.pkl
+      --metrics ${{inputs.metrics_dir}}/metrics.json
+      --fairness-report ${{inputs.rai_dir}}/fairness_report.json
+      --config ${{inputs.config_path}}
+      --model-name readmission-risk-model

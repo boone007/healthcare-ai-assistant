@@ -1,0 +1,68 @@
+# Training configuration for the readmission-risk model.
+#
+# Consumed by src/ml_pipeline/train.py and src/ml_pipeline/evaluate.py.
+# Values here override src/common/config.py:DEFAULT_CONFIG.
+
+environment: dev
+
+data:
+  raw_container: raw
+  curated_container: curated
+  models_container: models
+  monitoring_container: monitoring
+  feature_table: encounter_features
+  train_fraction: 0.70
+  validation_fraction: 0.15
+  # Remaining 0.15 is the held-out test split.
+
+model:
+  algorithm: lightgbm # one of: lightgbm, xgboost
+  name: readmission-risk-model
+  random_seed: 42
+  hyperparameters:
+    num_leaves: 31
+    learning_rate: 0.05
+    n_estimators: 300
+    min_child_samples: 20
+    feature_fraction: 0.9
+
+hyperparameter_search:
+  enabled: true
+  primary_metric: pr_auc
+  goal: maximize
+  max_total_trials: 20
+  max_concurrent_trials: 4
+  early_termination:
+    type: bandit
+    slack_factor: 0.1
+    evaluation_interval: 1
+  search_space:
+    num_leaves: [15, 31, 63, 127]
+    learning_rate:
+      type: loguniform
+      min_value: -4
+      max_value: -1
+    n_estimators: [100, 300, 500]
+    min_child_samples: [10, 20, 50]
+    feature_fraction:
+      type: uniform
+      min_value: 0.6
+      max_value: 1.0
+
+evaluation:
+  decision_threshold: 0.5
+  high_recall_precision_floor: 0.30
+  promotion_gate:
+    min_roc_auc: 0.70
+    min_pr_auc: 0.35
+    max_brier_score: 0.20
+    max_equalized_odds_difference: 0.10
+
+responsible_ai:
+  fairness_sensitive_columns: [sex, age_band, ethnicity]
+  shap_sample_size: 1000
+  error_analysis_min_slice_size: 30
+
+monitoring:
+  psi_threshold: 0.2
+  ks_pvalue_threshold: 0.01

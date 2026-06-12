@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "encounter_id": "ENC-SMOKE-TEST-0001",
+      "age": 74,
+      "sex": "F",
+      "insurance_type": "Medicare",
+      "admission_type": "Emergency",
+      "discharge_disposition": "SNF",
+      "length_of_stay": 6,
+      "comorbidity_count": 4,
+      "charlson_index": 5.0,
+      "prior_admissions_12mo": 2,
+      "prior_ed_visits_12mo": 3,
+      "num_medications": 12,
+      "bmi": 29.4,
+      "systolic_bp": 138.0,
+      "glucose_level": 156.0,
+      "creatinine": 1.3
+    }
+  ]
+}

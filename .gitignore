@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+local.settings.json
+
+# Data & model artifacts
+data/
+outputs/
+mlruns/
+*.csv
+*.parquet
+*.pkl
+*.joblib
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+
+# Azure ML
+.azureml/
+azureml-models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
