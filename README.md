@@ -132,22 +132,33 @@ python -m src.data_pipeline.transform --input data/raw/encounters.csv --output d
 ### 4.5 Train and evaluate the model
 
 ```bash
-python -m src.ml_pipeline.train --config configs/train_config.yaml
-python -m src.ml_pipeline.evaluate --model-path outputs/model.pkl --data data/processed/features.parquet
+python -m src.ml_pipeline.train --data data/processed/features.parquet --config configs/train_config.yaml --output-dir outputs
+python -m src.ml_pipeline.evaluate --model-path outputs/model.pkl --data outputs/test.parquet --config configs/train_config.yaml --output outputs/metrics.json
 ```
 
 ### 4.6 Run the Responsible AI suite
 
 ```bash
-python -m src.ml_pipeline.responsible_ai.shap_explainability --model-path outputs/model.pkl
-python -m src.ml_pipeline.responsible_ai.fairness_metrics --model-path outputs/model.pkl
-python -m src.ml_pipeline.responsible_ai.error_analysis --model-path outputs/model.pkl
+python -m src.ml_pipeline.responsible_ai.shap_explainability --model-path outputs/model.pkl --data outputs/test.parquet --output outputs/responsible_ai/shap_report.json
+python -m src.ml_pipeline.responsible_ai.fairness_metrics --model-path outputs/model.pkl --data outputs/test.parquet --output outputs/responsible_ai/fairness_report.json
+python -m src.ml_pipeline.responsible_ai.error_analysis --model-path outputs/model.pkl --data outputs/test.parquet --output outputs/responsible_ai/error_analysis.json
 ```
 
 ### 4.7 Register & deploy
 
+To check the responsible AI promotion gate locally without an AML workspace:
+
 ```bash
-python -m src.ml_pipeline.register_model --model-path outputs/model.pkl --model-name readmission-risk-model
+python -m src.ml_pipeline.register_model --model-path outputs/model.pkl --model-name readmission-risk-model --dry-run
+```
+
+To register the model in an Azure ML workspace (after provisioning infra in 4.3)
+and deploy it behind a managed online endpoint:
+
+```bash
+python -m src.ml_pipeline.register_model \
+  --model-path outputs/model.pkl --model-name readmission-risk-model \
+  --subscription-id <subscription-id> --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev
 az ml online-endpoint create -f src/deployment/aml_endpoint/endpoint.yml
 az ml online-deployment create -f src/deployment/aml_endpoint/deployment.yml --all-traffic
 ```

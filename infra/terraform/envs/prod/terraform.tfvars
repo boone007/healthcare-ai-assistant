@@ -1,7 +1,7 @@
 # Prod environment variable overrides
 # Replace with your organization's actual subscription ID before applying.
 
-subscription_id = "00000000-0000-0000-0000-000000000000"
+subscription_id = "990c37af-3c42-4bd0-a376-600bc37d71ff"
 location        = "eastus2"
 environment     = "prod"
 

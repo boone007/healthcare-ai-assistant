@@ -89,7 +89,8 @@ flowchart TB
 flowchart LR
     subgraph RG["rg-hcai-{env}"]
         VNET[vnet-hcai-{env}]
-        ST[sthcai{env}001\nADLS Gen2]
+        ST[sthcai{env}001\nADLS Gen2 data lake]
+        STML[stmlhcai{env}001\nAML default storage]
         KV[kv-hcai-{env}]
         AI[appi-hcai-{env}]
         AML[mlw-hcai-{env}\nAML Workspace]
@@ -103,7 +104,7 @@ flowchart LR
     AML --- EP
     AML --> KV
     AML --> AI
-    AML --> ST
+    AML --> STML
     FN --> AML
     FN --> KV
     FN --> AI
@@ -112,6 +113,13 @@ flowchart LR
 Resource naming follows the convention `<resource-prefix>-hcai-<env>` (or
 storage-account-safe variants), defined centrally in
 [`infra/terraform/envs/*/variables.tf`](../infra/terraform/envs).
+
+> **Two storage accounts per environment:** `sthcai{env}001` is the ADLS Gen2
+> (hierarchical namespace) data lake used by the data pipeline (`raw` /
+> `curated` / `models` / `monitoring` containers, `abfss://` paths).
+> `stmlhcai{env}001` is a separate, non-HNS storage account used as the AML
+> workspace's required default storage — Azure ML rejects HNS-enabled storage
+> accounts as workspace default storage, so the two cannot be combined.
 
 ## 5. Environments
 

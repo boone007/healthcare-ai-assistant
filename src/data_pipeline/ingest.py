@@ -88,16 +88,16 @@ def generate_synthetic_encounters(n_rows: int, start_date: date, seed: int = 42)
 
     # Synthetic readmission risk: logistic function of key risk drivers.
     risk_score = (
-        0.35 * (prior_admissions_12mo / 3.0)
-        + 0.30 * (prior_ed_visits_12mo / 4.0)
-        + 0.25 * (charlson_index / 10.0)
-        + 0.10 * (num_medications >= 5).astype(float)
-        + 0.05 * (discharge_disposition == "SNF").astype(float)
-        + 0.05 * (admission_type == "Emergency").astype(float)
-        - 0.10 * (age < 18).astype(float)
-        + rng.normal(0, 0.15, size=n_rows)
+        0.63 * (prior_admissions_12mo / 3.0)
+        + 0.54 * (prior_ed_visits_12mo / 4.0)
+        + 0.45 * (charlson_index / 10.0)
+        + 0.18 * (num_medications >= 5).astype(float)
+        + 0.09 * (discharge_disposition == "SNF").astype(float)
+        + 0.09 * (admission_type == "Emergency").astype(float)
+        - 0.18 * (age < 18).astype(float)
+        + rng.normal(0, 0.05, size=n_rows)
     )
-    probability = 1 / (1 + np.exp(-(risk_score - 0.6) * 4))
+    probability = 1 / (1 + np.exp(-(risk_score - 1.0) * 4))
     readmitted_30d = (rng.uniform(size=n_rows) < probability).astype(int)
 
     df = pd.DataFrame(

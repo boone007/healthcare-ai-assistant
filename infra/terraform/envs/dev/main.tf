@@ -35,6 +35,23 @@ module "storage_account" {
   tags                 = var.tags
 }
 
+# Dedicated storage account for the AML workspace's default/system storage.
+# The AML control plane rejects ADLS Gen2 (HNS-enabled) storage accounts as
+# the workspace's default storage, so this is separate from the
+# sthcai{env}001 data lake used by the data pipeline.
+module "aml_storage_account" {
+  source = "../../modules/storage-account"
+
+  name                         = "stmlhcai${var.environment}001"
+  resource_group_name          = module.resource_group.name
+  location                     = module.resource_group.location
+  account_tier                 = "Standard"
+  replication_type             = "LRS"
+  is_hns_enabled               = false
+  create_data_lake_containers  = false
+  tags                         = var.tags
+}
+
 module "key_vault" {
   source = "../../modules/key-vault"
 
@@ -63,7 +80,7 @@ module "aml_workspace" {
   name                     = "mlw-hcai-${var.environment}"
   resource_group_name      = module.resource_group.name
   location                 = module.resource_group.location
-  storage_account_id       = module.storage_account.id
+  storage_account_id       = module.aml_storage_account.id
   key_vault_id             = module.key_vault.id
   application_insights_id  = module.app_insights.id
   container_registry_name  = "acrhcai${var.environment}001"
