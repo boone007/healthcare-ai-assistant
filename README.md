@@ -159,8 +159,10 @@ and deploy it behind a managed online endpoint:
 python -m src.ml_pipeline.register_model \
   --model-path outputs/model.pkl --model-name readmission-risk-model \
   --subscription-id <subscription-id> --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev
-az ml online-endpoint create -f src/deployment/aml_endpoint/endpoint.yml
-az ml online-deployment create -f src/deployment/aml_endpoint/deployment.yml --all-traffic
+az ml online-endpoint create -f src/deployment/aml_endpoint/endpoint.yml \
+  --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev
+az ml online-deployment create -f src/deployment/aml_endpoint/deployment.yml \
+  --resource-group rg-hcai-dev --workspace-name mlw-hcai-dev --all-traffic
 ```
 
 ---
